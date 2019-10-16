@@ -13,7 +13,7 @@ Previous versions of the project are available by changing the branch.
 ### **2018**:
 
 * **Lines**: *638 (including large blocks of commented-out code)*
-* **Structure**: Starts at hard-coded URL, first scanning for same-domain pages, storing in an array (function uses reges to find and check domain for a match). Stores other-domain pages in a separate array. First visits same-domain pages, then other-domain pages, storing an array of found links in a twin array (tracked by indexOf location). Webpage content is scraped with BeautifulSoup and stored alongside page URL in a database. Arrays are also printed in an external file.
+* **Structure**: Starts at hard-coded URL, first scanning for same-domain pages, storing in an array (function uses regex to find and check domain for a match). Stores other-domain pages in a separate array. First visits same-domain pages, then other-domain pages, storing an array of found links in a twin array (tracked by indexOf location). Webpage content is scraped with BeautifulSoup and stored alongside page URL in a database. Arrays are also printed in an external file.
 
 **I would advise against trying to run this code. This script is bloated and abandoned, and possibly incomplete.**
 
