@@ -26,5 +26,5 @@ Previous versions of the project are available by changing the branch.
 
 ### **2020**:
 
-* **Lines**: *136*
+* **Lines**: *148*
 * **Structure**: No major CLI changes compared to 2019 version, except using proper argument parsing with argparse. Introducing classes! Actual object-oriented programming! Each webpage is an object, with array attributes that store what page the current page came from, and what pages the current page goes to. Admittedly, URL list is not stored in permanent storage (like a text file, for now). Better checking for ignored file extensions. Better string formatting. Scraping still done recursively. Array stores previously-visited links, each link checked and ignored if in the array.
