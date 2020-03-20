@@ -49,7 +49,7 @@ def clean_link(link):
 
 
 def find_page(url, pages):
-    for page in pages:
+    for _, page in pages.pages.items():
         if page.url == url:
             return page
     return None
