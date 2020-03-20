@@ -22,3 +22,9 @@ Previous versions of the project are available by changing the branch.
 
 * **Lines**: *103*
 * **Structure**: Starts at URL passed in through CLI arguments (also option to restrict scraping to just the starting domain). Rather than arrays, using a dictionary to store {URL: [links found on this page], [pages that link to this page]}. Strips # (anchors) and ? from URL to avoid unnecessarily scraping and storing the same webpage multiple times. Also ignores specific image, video, audio and PDF URL endings to avoid attempting to scrape non-webpages. Scraping runs recursively. Dictionary is written to a file. No web content is stored; just mapping the references between webpages.
+
+
+### **2020**:
+
+* **Lines**: *136*
+* **Structure**: No major CLI changes compared to 2019 version, except using proper argument parsing with argparse. Introducing classes! Actual object-oriented programming! Each webpage is an object, with array attributes that store what page the current page came from, and what pages the current page goes to. Admittedly, URL list is not stored in permanent storage (like a text file, for now). Better checking for ignored file extensions. Better string formatting. Scraping still done recursively. Array stores previously-visited links, each link checked and ignored if in the array.
