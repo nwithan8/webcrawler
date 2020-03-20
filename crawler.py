@@ -48,6 +48,13 @@ def clean_link(link):
     return link
 
 
+def find_page(url, pages):
+    for page in pages:
+        if page.url == url:
+            return page
+    return None
+
+
 def grab_links(start_url: str, pages: PageDict, save_pages: bool = False, restrict_domain: bool = False,
                restrict_to_domains: list = [], parentPage: Page = None):
     global VISITED_PAGES
@@ -76,10 +83,12 @@ def grab_links(start_url: str, pages: PageDict, save_pages: bool = False, restri
                         f.close()
                     print("Saved {}".format('{folder}/{path}'.format(folder=SAVE_WEBPAGE_FOLDER, path=file_path)))
                 except IsADirectoryError:
-                    with open('{folder}/{path}/index.html'.format(folder=SAVE_WEBPAGE_FOLDER, path=file_path), "w+") as f:
+                    with open('{folder}/{path}/index.html'.format(folder=SAVE_WEBPAGE_FOLDER, path=file_path),
+                              "w+") as f:
                         f.write(str(html))
                         f.close()
-                    print("Saved {}".format('{folder}/{path}/index.html'.format(folder=SAVE_WEBPAGE_FOLDER, path=file_path)))
+                    print("Saved {}".format(
+                        '{folder}/{path}/index.html'.format(folder=SAVE_WEBPAGE_FOLDER, path=file_path)))
                 except Exception as e:
                     print(e)
                     pass
@@ -105,6 +114,9 @@ def grab_links(start_url: str, pages: PageDict, save_pages: bool = False, restri
             print(e)
             pass
     else:
+        existing_page = find_page(start_url, pages)
+        if existing_page:
+            existing_page.fromPages.append(parentPage)
         print("{} already crawled".format(start_url))
 
 
