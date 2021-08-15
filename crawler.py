@@ -1,28 +1,58 @@
 #!/usr/bin/python3
+from typing import Union, List
 
+import bs4
 from bs4 import BeautifulSoup as bs
 import requests
 import argparse
 import os
 import re
 
-IGNORED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'peg', 'gif', 'mp4', 'mkv', 'avi', 'mov', 'swf', 'pdf', 'm3u', 'm3u8']
+from database.pages_database import PagesDatabase, Page
+
+IGNORED_EXTENSIONS = ['png', 'jpg', 'jpeg', 'peg', 'gif', 'mp4', 'mkv', 'avi', 'mov', 'swf', 'pdf', 'm3u', 'm3u8', 'msi', 'exe', 'zip']
 SAVE_WEBPAGE_FOLDER = 'saved_webpages'
-VISITED_PAGES = []
-ID_NUMBER = 0
 
 
-class PageDict:
+class LinkAndParent:
+    def __init__(self,
+                 link: str,
+                 parent_page: Page = None):
+        self.link = link
+        self.parent = parent_page
+
+
+class LinkAndParentList:
     def __init__(self):
-        self.pages = {}
+        self.list = []
+
+    @property
+    def _links(self):
+        return [item.link for item in self.list]
+
+    def add_item(self,
+                 link_and_parent: LinkAndParent):
+        if not self.link_already_being_tracked(url=link_and_parent.link):
+            self.list.append(link_and_parent)
+
+    def link_already_being_tracked(self,
+                                   url: str) -> bool:
+        return url in self._links
+
+    def load_next_item(self) -> LinkAndParent:
+        if not self.list:
+            raise Exception("We've run out of links!")  # this will basically never happen
+        next_pair = self.list[0]
+        self.list.pop(0)
+        return next_pair
 
 
-class Page:
-    def __init__(self, url, id_number):
-        self.url = url
-        self.id = id_number
-        self.fromPages = []
-        self.toPages = []
+restricted_domains = []
+
+currently_crawling_links = []
+
+database = PagesDatabase(sqlite_file="links.db")
+tracker = LinkAndParentList()
 
 
 def is_valid_link(link: str):
@@ -45,104 +75,130 @@ def clean_link(link):
             link = re.search(regex, link).group(1)
         except Exception as e:
             pass
+    if link.endswith("/"):
+        link = link[:-1]
     return link
 
 
-def find_page(url, pages):
-    for _, page in pages.pages.items():
-        if page.url == url:
-            return page
-    return None
+def is_approved_domain(url: str):
+    if not restricted_domains:
+        return True
+    base_domain = re.search('(http[s]?:\/\/[^\/]*)', url).group(1)
+    return base_domain in restricted_domains
 
 
-def grab_links(start_url: str, pages: PageDict, save_pages: bool = False, restrict_domain: bool = False,
-               restrict_to_domains: list = [], parentPage: Page = None):
-    global VISITED_PAGES
-    global ID_NUMBER
-    if start_url not in VISITED_PAGES:
-        print("Scraping from {}".format(start_url))
-        new_entry = Page(url=start_url, id_number=ID_NUMBER)
-        if parentPage:
-            new_entry.fromPages.append(parentPage)
-            parentPage.toPages.append(new_entry)
-        pages.pages[ID_NUMBER] = new_entry
-        try:
-            html = bs(requests.get(start_url).content, features="lxml")
-            file_path = re.search('http[s]?:\/\/(.*)', start_url).group(1)
-            dir_path = file_path.rsplit('/', 1)[0]
-            if save_pages and start_url.startswith('http'):
-                if not os.path.exists('{}/{}'.format(SAVE_WEBPAGE_FOLDER, dir_path)):
-                    os.makedirs('{}/{}'.format(SAVE_WEBPAGE_FOLDER, dir_path))
-                if file_path.endswith('/'):
-                    file_path = file_path[:-1]
-                if not file_path.endswith('.html') and not file_path.endswith('.htm') or not file_path.endswith('.php'):
-                    file_path += '.html'
-                try:
-                    with open('{folder}/{path}'.format(folder=SAVE_WEBPAGE_FOLDER, path=file_path), "w+") as f:
-                        f.write(str(html))
-                        f.close()
-                    print("Saved {}".format('{folder}/{path}'.format(folder=SAVE_WEBPAGE_FOLDER, path=file_path)))
-                except IsADirectoryError:
-                    with open('{folder}/{path}/index.html'.format(folder=SAVE_WEBPAGE_FOLDER, path=file_path),
-                              "w+") as f:
-                        f.write(str(html))
-                        f.close()
-                    print("Saved {}".format(
-                        '{folder}/{path}/index.html'.format(folder=SAVE_WEBPAGE_FOLDER, path=file_path)))
-                except Exception as e:
-                    print(e)
-                    pass
-            links = html.findAll('a', href=True)
-            VISITED_PAGES.append(start_url)
-            for link in links:
-                link = link.get('href')
-                if link.startswith('//'):
-                    link = 'https:{}'.format(link)
-                elif link.startswith('/'):
-                    dir_path = dir_path.rsplit('/', 1)[0]
-                    link = 'https://{path}{link}'.format(path=dir_path, link=link)
-                link = clean_link(link)
-                if is_valid_link(link):
-                    base_domain = re.search('(http[s]?:\/\/[^\/]*)', start_url).group(1)
-                    if restrict_domain and base_domain not in restrict_to_domains:
-                        pass
-                    else:
-                        ID_NUMBER += 1
-                        grab_links(start_url=link, pages=pages, save_pages=save_pages, restrict_domain=restrict_domain,
-                                   restrict_to_domains=restrict_to_domains)
-        except Exception as e:  # request timed out
-            print(e)
+def find_page(url, pages_database) -> Page:
+    return pages_database.get_page_entry_by_url(url=url)
+
+
+def page_available_to_scrape(url: str):
+    try:
+        return bool(requests.head(url))
+    except Exception as e:
+        print(e)
+        return False
+
+
+def check_if_same_link(url: str, parent_page: Page):
+    if not parent_page:
+        return False
+    if url.endswith("/"):
+        url = url[:-1]
+    parent_url = parent_page.url
+    if parent_url.endswith("/"):
+        parent_url = url[:-1]
+    return url == parent_url
+
+
+def grab_links_from_page(url: str):
+    if not page_available_to_scrape(url):
+        return []
+    try:
+        html = bs(requests.get(url).content, features="html.parser")
+        a_tags = html.findAll('a', href=True)
+        return [a.get('href') for a in a_tags]
+    except Exception as e:  # request timed out
+        print(e)
+        return []
+
+
+def crawl_page(url: str, parent_page: Page = None):
+    global currently_crawling_links
+    if url.endswith("/"):
+        url = url[:-1]
+    page = database.add_page_and_relationship(url=url, parent_page=parent_page)
+    if is_approved_domain(url) and not check_if_same_link(url, parent_page):
+        pair = LinkAndParent(link=url, parent_page=parent_page)
+        tracker.add_item(link_and_parent=pair)
+        link_fragments = grab_links_from_page(url=url)
+        # cycle_links(parent_page=page, link_fragments=link_fragments)
+        store_links(parent_page=page, link_fragments=link_fragments)
+
+
+def store_links(parent_page: Page, link_fragments: List[str]):
+    for link in link_fragments:
+        if link in ['/', '/.']:
             pass
-    else:
-        existing_page = find_page(start_url, pages)
-        if existing_page:
-            existing_page.fromPages.append(parentPage)
-        print("{} already crawled".format(start_url))
+        elif link.startswith("#"):
+            pass
+        elif link.startswith('http'):
+            pass
+        elif link.startswith('//'):
+            link = f'https:{link}'
+        elif link.startswith('/'):
+            link = f'{parent_page.url}{link}'
+        else:
+            link = f'{parent_page.url}/{link}'
+        link = clean_link(link)
+        global currently_crawling_links
+        if link and is_valid_link(link) and not tracker.link_already_being_tracked(url=link):
+            pair = LinkAndParent(link=link, parent_page=parent_page)
+            tracker.add_item(link_and_parent=pair)
+
+
+def cycle_links(parent_page: Page, link_fragments: List[str]):
+    for link in link_fragments:
+        if link in ['/', '/.']:
+            pass
+        elif link.startswith("#"):
+            pass
+        elif link.startswith('http'):
+            pass
+        elif link.startswith('//'):
+            link = f'https:{link}'
+        elif link.startswith('/'):
+            link = f'{parent_page.url}{link}'
+        else:
+            link = f'{parent_page.url}/{link}'
+        link = clean_link(link)
+        if link and is_valid_link(link) and link not in currently_crawling_links:
+            crawl_page(url=link, parent_page=parent_page)
+
+
+def crawl_pages(url: str, parent_page: Page = None):
+    crawl_page(url=url, parent_page=parent_page)
+    while True:
+        next_item = tracker.load_next_item()
+        if not next_item:
+            exit(0)
+        crawl_page(url=next_item.link, parent_page=next_item.parent)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('starting_url', help="URL of where to start crawling")
     parser.add_argument('-r', "--restrict", help="Don't leave the initial domain", action='store_true')
-    parser.add_argument('-s', '--save', help='Save pages', action='store_true')
     args = parser.parse_args()
-    restrict_to_domains = []
+
+    global restricted_domains
     if args.restrict:
-        restrict_to_domains.append(args.starting_url)
+        restricted_domains.append(args.starting_url)
     if args.starting_url[:7] not in ['https:/', 'http://']:
         args.starting_url = 'https://{}'.format(args.starting_url)
         if args.restrict:
-            restrict_to_domains.append(args.starting_url)
-    if args.save and not os.path.exists(SAVE_WEBPAGE_FOLDER):
-        os.mkdir(SAVE_WEBPAGE_FOLDER)
-    """
-    with open('crawler_dict.txt', 'r') as f:
-        tree = eval(f.read())
-    f.close()
-    """
-    pages_dict = PageDict()
-    grab_links(start_url=args.starting_url, pages=pages_dict, save_pages=args.save, restrict_domain=args.restrict,
-               restrict_to_domains=restrict_to_domains)
+            restricted_domains.append(args.starting_url)
+
+    crawl_pages(url=args.starting_url, parent_page=None)
 
 
 main()
